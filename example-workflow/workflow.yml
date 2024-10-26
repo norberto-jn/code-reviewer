@@ -1,0 +1,78 @@
+name: Comment on Pull Request
+
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '14'  # ou a versão que você preferir
+
+      - name: Install dependencies
+        run: npm install ia-code-reviewer
+
+      - name: Comment on PR
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const generateReviewText = require('ia-code-reviewer');
+
+            const issueNumber = context.payload.pull_request.number;
+            const commentBase = 'Obrigado por abrir essa Pull Request! Vamos revisar em breve.\n\nArquivos alterados:\n';
+
+            // Use github.rest para acessar a API
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: issueNumber,
+            });
+
+            let comment = commentBase;
+
+            if (!files || files.length === 0) {
+              comment += 'Nenhum arquivo alterado.\n';
+            } else {
+              files.forEach(file => {
+                const filePatch = file.patch || 'Sem alterações';
+                comment += `**${file.filename}**\n`;
+                comment += '```\n' + filePatch + '\n```\n\n';
+              });
+            }
+
+            const reviewText = async (text,token) => {
+                  const result = await generateReviewText(
+                      text,
+                      token
+                  );
+                  console.log(result);
+                  return result
+            }
+
+            // Pega a variável de ambiente
+            const mySecret = process.env.CHATGPT_TOKEN;
+
+            // Adiciona o segredo ao comentário
+            const reviewComment = await reviewText(
+                comment,
+                mySecret
+            )
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: reviewComment,
+            });
+
+        env:
+          CHATGPT_TOKEN : ${{ secrets.CHATGPT_TOKEN }}
